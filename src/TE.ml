@@ -57,7 +57,7 @@ let syntPreConditions ?(config = PIE.Config.default) ?(consts = []) (job : Job.t
                                                                             match inp , res with
                                                                             | _ , Error e -> false
                                                                             | inp, Ok r -> let inputs = inp@(List.init 1 ~f:(fun i -> r))
-                                                                                              in match ((Expr.to_function pc.expr) inputs)
+                                                                                              in match (pc_f inputs)
                                                                                               with | Value.Bool y -> y | _ -> false )
                                                                   ~features:job.features 
                                                                     job.tests)
