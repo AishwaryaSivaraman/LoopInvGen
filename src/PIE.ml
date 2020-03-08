@@ -54,15 +54,19 @@ let synthFeature ?(consts = []) ~(job : Job.t) ~(config : Synthesizer.Config.t)
                  (conflict_group : Value.t list conflict) stats
                  : Value.t list Job.feature Job.with_desc =
   let open Synthesizer in
-  let result = solve ~config {
-    constants = consts ;
-    arg_names = job.farg_names ;
-    inputs = (let all_inputs = conflict_group.pos @ conflict_group.neg in
-      List.mapi job.farg_names
-                ~f:(fun i _ -> Array.of_list List.(map all_inputs ~f:(fun l -> nth_exn l i))));
-    outputs = Array.of_list ((List.map conflict_group.pos ~f:(fun _ -> Value.Bool true))
-                            @ (List.map conflict_group.neg ~f:(fun _ -> Value.Bool false)))
-  } in stats._Synthesizer <- result.stats :: stats._Synthesizer
+  let result =
+    match solve ~config {
+      constants = consts ;
+      arg_names = job.farg_names ;
+      inputs = (let all_inputs = conflict_group.pos @ conflict_group.neg in
+        List.mapi job.farg_names
+                  ~f:(fun i _ -> Array.of_list List.(map all_inputs ~f:(fun l -> nth_exn l i))));
+      outputs = Array.of_list ((List.map conflict_group.pos ~f:(fun _ -> Value.Bool true))
+                              @ (List.map conflict_group.neg ~f:(fun _ -> Value.Bool false)))
+    } with
+      | Single res -> res
+      | _ -> raise (Internal_Exn "Expecting single synthesis result for precondition inference")
+  in stats._Synthesizer <- result.stats :: stats._Synthesizer
      ; stats.pi_time_ms <- stats.pi_time_ms +. result.stats.synth_time_ms
      ; ((fun values -> try Value.equal (result.func values) (Value.Bool true) with _ -> false),
         (if List.is_empty result.constraints then result.string

@@ -12,6 +12,8 @@ module Config = struct
     logic : Logic.t ;
     max_expressiveness_level : int ;
     order : int -> int -> float ;
+    goal_directed : bool;
+    prune_obs_equivalen_expr : bool;
   }
 
   let default : t = {
@@ -20,6 +22,8 @@ module Config = struct
     logic = Logic.of_string "LIA" ;
     max_expressiveness_level = 1024 ;
     order = (fun g_cost e_cost -> (Int.to_float e_cost) *. (Float.log (Int.to_float g_cost))) ;
+    goal_directed = true;
+    prune_obs_equivalen_expr = true;
   }
 end
 
@@ -44,9 +48,15 @@ type result = {
   stats : stats
 }
 
+type synthesis_result =
+  | Single of result
+  | All of result list * stats
+
 let max_size = 25
 
 exception Success of Expr.t
+
+exception TESuccess of Expr.t list
 
 module DList = Doubly_linked
 
@@ -201,7 +211,7 @@ let solve_impl (config : Config.t) (task : task) (stats : stats) =
   let add_candidate candidates_set level cost (candidate : Expr.synthesized) =
     let old_size = Set.length !seen_outputs
      in seen_outputs := Set.add !seen_outputs candidate.outputs
-      ; if (Set.length !seen_outputs) = old_size then false
+      ; if (Set.length !seen_outputs) = old_size && config.prune_obs_equivalen_expr then false
         else (ignore (DList.insert_last candidates_set.(level).(cost) candidate) ; true)
   in
 
@@ -219,7 +229,7 @@ let solve_impl (config : Config.t) (task : task) (stats : stats) =
   ;
 
   List.iteri task.inputs ~f:(fun i input ->
-    ignore (add_candidate (typed_candidates (Value.typeof input.(1))) 0 1
+    ignore (add_candidate (typed_candidates (Value.typeof input.(0))) 0 1
                           { expr = Expr.Var i ; outputs = input }))
   ;
 
@@ -229,12 +239,14 @@ let solve_impl (config : Config.t) (task : task) (stats : stats) =
   let check (candidate : Expr.synthesized) =
     (* Log.debug (lazy ("  > Now checking (@ cost " ^ (Int.to_string (f_cost candidate.expr)) ^ "): "
                        ^ (Expr.to_string (Array.of_list task.arg_names) candidate.expr))) ; *)
-    if Array.equal Value.equal task.outputs candidate.outputs
-    then raise (Success candidate.expr)
+    if config.goal_directed then
+        begin
+          if Array.equal Value.equal task.outputs candidate.outputs
+          then raise (Success candidate.expr)
+        end
   in
-
-  let task_codomain = Value.typeof task.outputs.(1)
-   in DList.iter ~f:check (typed_candidates task_codomain).(0).(1)
+   let task_codomain = Value.typeof task.outputs.(0) in
+   DList.iter ~f:check (typed_candidates task_codomain).(0).(1)
   ;
 
   let apply_component op_level expr_level cost arg_types applier =
@@ -271,7 +283,7 @@ let solve_impl (config : Config.t) (task : task) (stats : stats) =
                   | None -> stats.pruned <- stats.pruned + 1
                   | Some result
                     -> let expr_cost = f_cost result.expr
-                        in if expr_cost < config.cost_limit
+                        in if expr_cost < config.cost_limit && config.goal_directed
                            then (if Type.equal task_codomain unified_component.codomain then check result)
                          ; if not (add_candidate candidates expr_level expr_cost result)
                            then stats.pruned <- stats.pruned + 1
@@ -319,16 +331,41 @@ let solve_impl (config : Config.t) (task : task) (stats : stats) =
                             ; poly_list_components.(l)
                             ; poly_array_components.(l) ]
                             ~f:(fun (cand_type, cands) comps
-                                -> List.iter comps ~f:(expand_component l level cost cands cand_type))))
+                                -> List.iter comps ~f:(expand_component l level cost cands cand_type))));
+                                if not config.goal_directed
+                                then (let task_codomain = Value.typeof task.outputs.(0) in
+                                      let expr_list =
+                                        List.fold_left ~init:[] (Array.to_list (typed_candidates task_codomain))
+                                        ~f:(fun res cand_level
+                                              -> List.fold_left ~init:res (Array.to_list cand_level) 
+                                                 ~f:(fun res cand_dlist
+                                                         -> (DList.fold_right ~init:res
+                                                                  ~f:(fun candidate res
+                                                                          -> res@[candidate.expr]) cand_dlist)))
+                                        in raise (TESuccess expr_list)); ()
 
-let solve ?(config = Config.default) (task : task) : result =
+let solve ?(config = Config.default) (task : task) : synthesis_result =
   Log.debug (lazy ("Running enumerative synthesis with logic `" ^ (config.logic.name) ^ "`:"));
   let start_time = Time.now () in
   let stats = { enumerated = 0 ; pruned = 0 ; synth_time_ms = 0.0 } in
   try solve_impl config task stats
     ; stats.synth_time_ms <- Time.(Span.(to_ms (diff (now ()) start_time)))
     ; raise NoSuchFunction
-  with Success solution
+  with
+     | TESuccess expr_list
+       -> let arg_names_array = Array.of_list task.arg_names in
+          let result = List.fold_left ~init:[] expr_list
+                                      ~f:(fun res e ->
+                                              (let solution_string = Expr.to_string arg_names_array e in
+                                               let solution_constraints = Expr.get_constraints arg_names_array e
+                                               in res@[{ expr = e
+                                                        ; string = solution_string
+                                                        ; func = Expr.to_function e
+                                                        ; constraints = solution_constraints
+                                                        ; stats = stats
+                                                        }]))
+          in (All (result, stats))
+     | Success solution
        -> let arg_names_array = Array.of_list task.arg_names in
           let solution_string = Expr.to_string arg_names_array solution in
           let solution_constraints = Expr.get_constraints arg_names_array solution
@@ -339,9 +376,9 @@ let solve ?(config = Config.default) (task : task) : result =
             ; Log.debug (lazy ("  % Constraints: "
                               ^ (if (List.length solution_constraints = 0) then "()"
                                  else String.concat ~sep:" " solution_constraints ^ ")")))
-            ; { expr = solution
+            ; (Single { expr = solution
               ; string = solution_string
               ; func = Expr.to_function solution
               ; constraints = solution_constraints
               ; stats = stats
-              }
+              })

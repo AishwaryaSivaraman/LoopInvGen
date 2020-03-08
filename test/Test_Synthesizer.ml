@@ -5,17 +5,20 @@ open LoopInvGen
 open Synthesizer
 
 let plus_x_y () =
-  let result = solve {
+  let result = match solve {
     arg_names = [ "x" ; "y" ];
     inputs = List.map ~f:(Array.map ~f:(fun i -> Value.Int i))
                [ [| 3 ; 7 ; (-1) ; (-4) |]
                ; [| 3 ; 2 ; 13 ; 11 |] ];
     outputs = Array.map ~f:(fun i -> Value.Int i) [| 6 ; 9 ; 12 ; 7 |];
     constants = []
-  } in Alcotest.(check string) "identical" "(+ x y)" result.string
+  } with
+  | Single res -> res.string
+  | _ -> ""
+  in Alcotest.(check string) "identical" "(+ x y)" result
 
 let ge_plus_x_z_y () =
-  let result = solve {
+  let result = match solve {
     arg_names = [ "x" ; "y" ; "z" ];
     inputs = List.map ~f:(Array.map ~f:(fun i -> Value.Int i))
                [ [| 3 ; 7 ; (-1) ; (-4) ; 6 |]
@@ -24,10 +27,13 @@ let ge_plus_x_z_y () =
     outputs = Array.map ~f:(fun b -> Value.Bool b)
                         [| true ; false ; false ; false ; true |];
     constants = []
-  } in Alcotest.(check string) "identical" "(>= (+ x z) y)" result.string
+  } with
+  | Single res -> res.string
+  | _ -> ""
+  in Alcotest.(check string) "identical" "(>= (+ x z) y)" result
 
 let not_or_eq_w_x_eq_y_z () =
-  let result = solve {
+  let result = match solve {
     arg_names = [ "w" ; "x" ; "y" ; "z" ];
     inputs = List.map ~f:(Array.map ~f:(fun i -> Value.Int i))
                [ [| 4 ; (-1) ; (-5) ; 1 ; (-1) ; 2 |]
@@ -37,10 +43,13 @@ let not_or_eq_w_x_eq_y_z () =
     outputs = Array.map ~f:(fun b -> Value.Bool b)
                         [| true ; true ; false ; false ; true ; false |];
     constants = []
-  } in Alcotest.(check string) "identical" "(not (or (= w x) (= y z)))" result.string
+  } with
+  | Single res -> res.string
+  | _ -> ""
+  in Alcotest.(check string) "identical" "(not (or (= w x) (= y z)))" result
 
 let select_a_k () =
-  let result = solve ~config:{ Config.default with logic = Logic.of_string "ALIA" } {
+  let result = match solve ~config:{ Config.default with logic = Logic.of_string "ALIA" } {
     arg_names = [ "a" ; "k" ];
     inputs = Value.[
       (Array.map ~f:(fun (a,b,c,d) -> Value.Array (a,b,c,d))
@@ -59,10 +68,13 @@ let select_a_k () =
       [| Int 1 ; Int 2 ; Int 3 |] ];
     outputs = Value.[| String "10" ; String "20" ; String "30" |];
     constants = []
-  } in Alcotest.(check string) "identical" "(select a k)" result.string
+  } with
+  | Single res -> res.string
+  | _ -> ""
+  in Alcotest.(check string) "identical" "(select a k)" result
 
 let select_a_k__with_duplicates () =
-  let result = solve ~config:{ Config.default with logic = Logic.of_string "ALIA" } {
+  let result = match solve ~config:{ Config.default with logic = Logic.of_string "ALIA" } {
     arg_names = [ "a" ; "k" ];
     inputs = Value.[
       (Array.map ~f:(fun (a,b,c,d) -> Array (a,b,c,d))
@@ -78,11 +90,14 @@ let select_a_k__with_duplicates () =
       [| Int 3 ; Int 2 ; Int 3 |] ];
     outputs = Value.[| Int 10 ; Int 20 ; Int 30 |];
     constants = []
-  } in Alcotest.(check string) "identical" "(select a k)" result.string
+  } with
+  | Single res -> res.string
+  | _ -> ""
+  in Alcotest.(check string) "identical" "(select a k)" result
 
 let store_a_k_v__empty () =
 let open Synthesizer in
-let result = solve ~config:{ Config.default with logic = Logic.of_string "ALIA" } {
+let result = match solve ~config:{ Config.default with logic = Logic.of_string "ALIA" } {
   arg_names = [ "a" ; "k" ; "v"];
   inputs = Value.[
     (Array.map ~f:(fun (a,b,c,d) -> Array (a,b,c,d))
@@ -95,10 +110,13 @@ let result = solve ~config:{ Config.default with logic = Logic.of_string "ALIA" 
                    ; Array (Type.INT, Type.INT, [ (Int 2, Int 40) ], Int 0)
                    ; Array (Type.INT, Type.INT, [ (Int 3, Int 6) ], Int 30) |];
   constants = []
-} in Alcotest.(check string) "identical" "(store a k v)" result.string
+} with
+  | Single res -> res.string
+  | _ -> ""
+in Alcotest.(check string) "identical" "(store a k v)" result
 
 let store_a_k_v__nonempty () =
-  let result = solve ~config:{ Config.default with logic = Logic.of_string "ALIA" } {
+  let result = match solve ~config:{ Config.default with logic = Logic.of_string "ALIA" } {
     arg_names = [ "a" ; "k" ; "v"];
     inputs = Value.[
       (Array.map ~f:(fun (a,b,c,d) -> Array (a,b,c,d))
@@ -117,10 +135,13 @@ let store_a_k_v__nonempty () =
                               [ (Int 3, Int 6) ; (Int 1, Int 20) ],
                               Int 30) |];
     constants = []
-  } in Alcotest.(check string) "identical" "(store a k v)" result.string
+  } with
+  | Single res -> res.string
+  | _ -> ""
+ in Alcotest.(check string) "identical" "(store a k v)" result
 
 let store_a_k_v__with_duplicates () =
-  let result = solve ~config:{ Config.default with logic = Logic.of_string "ALIA" } {
+  let result = match solve ~config:{ Config.default with logic = Logic.of_string "ALIA" } {
     arg_names = [ "a" ; "k" ; "v"];
     inputs = Value.[
       (Array.map ~f:(fun (a,b,c,d) -> Array (a,b,c,d))
@@ -139,11 +160,14 @@ let store_a_k_v__with_duplicates () =
                               [ (Int 3 , Int 6) ; (Int 1, Int 20) ],
                               Int 30) |];
     constants = []
-  } in Alcotest.(check string) "identical" "(store a k v)" result.string
+  } with
+  | Single res -> res.string
+  | _ -> ""
+ in Alcotest.(check string) "identical" "(store a k v)" result
 
 let ge_y_len_x () =
   let open Synthesizer in
-  let result = solve ~config:{ Config.default with logic = Logic.of_string "ALL" } {
+  let result = match solve ~config:{ Config.default with logic = Logic.of_string "ALL" } {
     arg_names = [ "x" ; "y" ];
     inputs = Value.[
       Array.map ~f:(fun l -> List (Type.INT, (List.map l ~f:(fun i -> Int i))))
@@ -159,11 +183,14 @@ let ge_y_len_x () =
     outputs = Array.map ~f:(fun b -> Value.Bool b)
                         [| false; true; true; true; false; false |];
     constants = []
-  } in Alcotest.(check string) "identical" "(>= y (len x))" result.string
+  } with
+  | Single res -> res.string
+  | _ -> ""
+  in Alcotest.(check string) "identical" "(>= y (len x))" result
 
 let all_mapR_ge_l_0 () =
   let open Synthesizer in
-  let result = solve ~config:{ Config.default with logic = Logic.of_string "ALL" } {
+  let result = match solve ~config:{ Config.default with logic = Logic.of_string "ALL" } {
     arg_names = [ "l" ];
     inputs = Value.[
       Array.map ~f:(fun l -> List (Type.INT, (List.map l ~f:(fun i -> Int i))))
@@ -178,7 +205,10 @@ let all_mapR_ge_l_0 () =
     outputs = Array.map ~f:(fun b -> Value.Bool b)
                         [| false; true; false; true; true; false; true |];
     constants = []
-  } in Alcotest.(check string) "identical" "(all (map-fixR-int-geq l 0))" result.string
+  } with
+  | Single res -> res.string
+  | _ -> ""
+  in Alcotest.(check string) "identical" "(all (map-fixR-int-geq l 0))" result
 
 let all = [
   "(+ x y)",                         `Quick, plus_x_y ;

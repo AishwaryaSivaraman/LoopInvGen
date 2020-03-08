@@ -20,6 +20,17 @@ type ('a, 'b) _t = {
 
 type t = (Value.t list, Value.t) _t
 
+type ('a, 'b) _te = {
+  f : 'a -> 'b ;
+  farg_names : string list ;
+  farg_types : Type.t list ;
+  farg_f : (string * Type.t) list;
+  features : 'a feature with_desc list ;
+  tests : Value.t list list;
+}
+
+type te = (Value.t list, Value.t) _te
+
 let are_values_equal = List.equal Value.equal
 
 let compute_feature_value (test : 'a) (feature : 'a feature with_desc) : bool =
@@ -101,3 +112,10 @@ let add_feature ~(job : t) (feature : 'a feature with_desc) : t =
        pos_tests = List.map job.pos_tests ~f:add_to_fv ;
        neg_tests = List.map job.neg_tests ~f:add_to_fv ;
      }
+
+let create_te ~f ~args ~args_pie ?(features = []) tests : te=
+  { f ; features; tests
+  ; farg_names = List.map args ~f:fst
+  ; farg_types = List.map args ~f:snd
+  ; farg_f = args_pie
+  }
