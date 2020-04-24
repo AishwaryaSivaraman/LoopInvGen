@@ -3,6 +3,8 @@ open Core_kernel
 open Exceptions
 open Utils
 
+module DList = Doubly_linked
+
 module Config = struct
   type cost_attr = Height | Size
 
@@ -51,14 +53,13 @@ type result = {
 type synthesis_result =
   | Single of result
   | All of result list * stats
+  | Experimental of Expr.synthesized DList.t Array.t array * stats
 
 let max_size = 25
 
 exception Success of Expr.t
 
-exception TESuccess of Expr.t list
-
-module DList = Doubly_linked
+exception TESuccess of Expr.synthesized DList.t Array.t array
 
 let divide_size applier arity op_level expr_level remaining_size =
   let rec eq_helper arity remaining_size acc =
@@ -237,8 +238,8 @@ let solve_impl (config : Config.t) (task : task) (stats : stats) =
   let f_divide = match config.cost_attribute with Height -> divide_height | Size -> divide_size in
 
   let check (candidate : Expr.synthesized) =
-    (* Log.debug (lazy ("  > Now checking (@ cost " ^ (Int.to_string (f_cost candidate.expr)) ^ "): "
-                       ^ (Expr.to_string (Array.of_list task.arg_names) candidate.expr))) ; *)
+    Log.debug (lazy ("  > Now checking (@ cost " ^ (Int.to_string (f_cost candidate.expr)) ^ "): "
+                       ^ (Expr.to_string (Array.of_list task.arg_names) candidate.expr))) ;
     if config.goal_directed then
         begin
           if Array.equal Value.equal task.outputs candidate.outputs
@@ -263,11 +264,11 @@ let solve_impl (config : Config.t) (task : task) (stats : stats) =
     let applier (args : Expr.synthesized list) =
       stats.enumerated <- stats.enumerated + 1;
       begin
-        Log.debug (lazy ( "Attempting to unify " ^ component.name ^ " : [" ^ (List.to_string_map ~sep:"," ~f:Type.to_string component.domain)
+        (* Log.debug (lazy ( "Attempting to unify " ^ component.name ^ " : [" ^ (List.to_string_map ~sep:"," ~f:Type.to_string component.domain)
                         ^ "] -> " ^ (Type.to_string component.codomain)));
         Log.debug (lazy ("with [" ^ (List.to_string_map args ~sep:" , "
                                                         ~f:(fun a -> "(" ^ (Expr.to_string (Array.of_list task.arg_names) a.expr)
-                                                                   ^ " : " ^ (Type.to_string (Value.typeof a.outputs.(0))) ^ ")")) ^ "]"));
+                                                                   ^ " : " ^ (Type.to_string (Value.typeof a.outputs.(0))) ^ ")")) ^ "]")); *)
         match Expr.unify_component component (List.map args ~f:(fun a -> Value.typeof a.outputs.(0))) with
         | None -> Log.debug (lazy (" > Unification failure!"))
         | Some unified_component -> begin
@@ -276,8 +277,9 @@ let solve_impl (config : Config.t) (task : task) (stats : stats) =
                             | LIST _ -> LIST (TVAR "_")
                             | cod -> cod)
              in if not (Type.equal cod cand_type) then
-                  Log.debug (lazy ("  > The candidate type " ^ (Type.to_string cand_type) ^
-                                   " did not match the codomain " ^ (Type.to_string cod)))
+                  ()
+                  (* Log.debug (lazy ("  > The candidate type " ^ (Type.to_string cand_type) ^
+                                   " did not match the codomain " ^ (Type.to_string cod))) *)
                 else begin
                   match Expr.apply unified_component args with
                   | None -> stats.pruned <- stats.pruned + 1
@@ -332,17 +334,10 @@ let solve_impl (config : Config.t) (task : task) (stats : stats) =
                             ; poly_array_components.(l) ]
                             ~f:(fun (cand_type, cands) comps
                                 -> List.iter comps ~f:(expand_component l level cost cands cand_type))));
-                                if not config.goal_directed
-                                then (let task_codomain = Value.typeof task.outputs.(0) in
-                                      let expr_list =
-                                        List.fold_left ~init:[] (Array.to_list (typed_candidates task_codomain))
-                                        ~f:(fun res cand_level
-                                              -> List.fold_left ~init:res (Array.to_list cand_level) 
-                                                 ~f:(fun res cand_dlist
-                                                         -> (DList.fold_right ~init:res
-                                                                  ~f:(fun candidate res
-                                                                          -> res@[candidate.expr]) cand_dlist)))
-                                        in raise (TESuccess expr_list)); ()
+                                   if not config.goal_directed 
+                                      then (let task_codomain = Value.typeof task.outputs.(0)
+                                            in raise (TESuccess (typed_candidates task_codomain))); 
+                                   ()
 
 let solve ?(config = Config.default) (task : task) : synthesis_result =
   Log.debug (lazy ("Running enumerative synthesis with logic `" ^ (config.logic.name) ^ "`:"));
@@ -352,19 +347,7 @@ let solve ?(config = Config.default) (task : task) : synthesis_result =
     ; stats.synth_time_ms <- Time.(Span.(to_ms (diff (now ()) start_time)))
     ; raise NoSuchFunction
   with
-     | TESuccess expr_list
-       -> let arg_names_array = Array.of_list task.arg_names in
-          let result = List.fold_left ~init:[] expr_list
-                                      ~f:(fun res e ->
-                                              (let solution_string = Expr.to_string arg_names_array e in
-                                               let solution_constraints = Expr.get_constraints arg_names_array e
-                                               in res@[{ expr = e
-                                                        ; string = solution_string
-                                                        ; func = Expr.to_function e
-                                                        ; constraints = solution_constraints
-                                                        ; stats = stats
-                                                        }]))
-          in (All (result, stats))
+     | TESuccess exprs -> (Experimental (exprs, stats))
      | Success solution
        -> let arg_names_array = Array.of_list task.arg_names in
           let solution_string = Expr.to_string arg_names_array solution in

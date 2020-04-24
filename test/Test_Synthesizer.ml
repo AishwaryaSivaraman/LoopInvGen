@@ -210,6 +210,34 @@ let all_mapR_ge_l_0 () =
   | _ -> ""
   in Alcotest.(check string) "identical" "(all (map-fixR-int-geq l 0))" result
 
+let l1_equal_l2 () =
+  let open Synthesizer in
+  let result = match solve ~config:{ Config.default with logic = Logic.of_string "ALL" } {
+    arg_names = [ "l1" ; "l2" ];
+    inputs = Value.[
+      Array.map ~f:(fun l -> List (Type.INT, (List.map l ~f:(fun i -> Int i))))
+                [| [1; (-1); 2]
+                 ; [1; (-1); 2]
+                 ; [1; (-1); 2]
+                 ; [3]
+                 ; [1]
+                 ; [2] |];
+      Array.map ~f:(fun l -> List (Type.INT, (List.map l ~f:(fun i -> Int i))))
+                [| [1; (-1); 2]
+                 ; [1; (-1); 2]
+                 ; [1; (-1); 2]
+                 ; [3]
+                 ; [1]
+                 ; [5] |];
+    ];
+    outputs = Array.map ~f:(fun b -> Value.Bool b)
+                        [| true; true; true; true; true; false |];
+    constants = []
+  } with
+  | Single res -> res.string
+  | _ -> ""
+  in Alcotest.(check string) "identical" "(equal l1 l2)" result
+
 let all = [
   "(+ x y)",                         `Quick, plus_x_y ;
   "(>= (+ x z) y)",                  `Quick, ge_plus_x_z_y ;
@@ -221,4 +249,5 @@ let all = [
   "(store a k v) ; with duplicates", `Quick, store_a_k_v__with_duplicates ;
   "(>= y (len x))",                  `Quick, ge_y_len_x ;
   "(all (map-fixR-int-geq l 0))",    `Quick, all_mapR_ge_l_0 ;
+  "(equal l1 l2)",                    `Quick, l1_equal_l2 ;
 ]

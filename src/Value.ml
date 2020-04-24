@@ -7,6 +7,7 @@ module T = struct
          | Bool of bool
          | Char of char
          | String of string
+         | Tuple of (int * int)
          | List of Type.t * t list
          | Array of Type.t * Type.t * (t * t) list * t
            (* FIXME: Use HashTable instead of List *)
@@ -24,13 +25,17 @@ let rec typeof : t -> Type.t = function
   | List (typ, _) -> Type.LIST typ
   | Array (key_type, value_type, _, _)
     -> Type.ARRAY (key_type,value_type)
+  | Tuple (_, _) -> Type.INT
 
 let rec to_string : t -> string = function
   | Int i    -> Int.to_string i
   | Bool b   -> Bool.to_string b
   | Char c   -> "\'" ^ (Char.to_string c) ^ "\'"
   | String s -> "\"" ^ s ^ "\""
-  | List _   -> raise (Internal_Exn "List type (de/)serialization not implemented!")
+  | Tuple (a, b) -> "(" ^ (Int.to_string a) ^ "," ^ (Int.to_string b) ^ ")"
+  | List  (key_type, list_values) -> (* TODO: Need to check if this to_string for Lists is compatible with z3 *)
+                                     List.fold_left ~init:"nil" list_values
+                                     ~f:(fun accum e -> "(insert "^ (to_string e) ^ " " ^ accum ^ " )")
   | Array (key_type, val_type, value, default_v)
     -> let default_string = "((as const (Array " ^ (Type.to_string key_type) ^ " " ^ (Type.to_string val_type) ^ ")) " ^ (to_string default_v) ^ ")"
         in List.fold_left ~init:default_string value
